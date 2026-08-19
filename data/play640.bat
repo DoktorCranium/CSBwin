@@ -1,1 +1,0 @@
-.\CSBwin size=large
