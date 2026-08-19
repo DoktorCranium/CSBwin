@@ -53,4 +53,7 @@ http://dianneandpaul.net/CSBwin/Games/CSB_Description.html
 
 - Copy dungeon.dat, graphics.dat, hcsb.dat, hcsb.hct and mini.dat to the CSBwin's executable path and run CSBwin 
 
+Automapping included ! Just press "m" in the game to see the current map and your location 
+To escape from the map just press "m" again to get back to the dungeon view 
+
  
