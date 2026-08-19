@@ -22,22 +22,24 @@ Building:
 
 OpenVMS 8.4 (AXP) 
 
-''' 
+```
 @configure 
 @build 
-'''
+```
 
 
 macOS 26.6 
-'''
+```
 mkdir build 
 cd build 
 cmake .. 
 make -j8 
-''' 
+``` 
 
 Running: 
+
 Dungeon_Master 
+
 Download any Linux tarbal from : 
 http://dianneandpaul.net/CSBwin/Games/DungeonMaster_Description.html 
 
@@ -45,6 +47,7 @@ http://dianneandpaul.net/CSBwin/Games/DungeonMaster_Description.html
 
 
 Chaos_Strikes_Back
+
 Download any Linux tablall from : 
 http://dianneandpaul.net/CSBwin/Games/CSB_Description.html
 
