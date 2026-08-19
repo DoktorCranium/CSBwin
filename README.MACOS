@@ -1,0 +1,9 @@
+Builds with cmake and clang on macOS Tahoe 26.6 
+Needs SDL2
+
+mkdir build
+cd build
+cmake ..
+make -j8 
+
+

@@ -1,0 +1,405 @@
+========================================================================
+  CSBwin 15.7 for OpenVMS 8.4 Alpha  -  Dungeon Master / Chaos Strikes Back
+========================================================================
+
+WHAT THIS IS
+------------
+An OpenVMS port of CSBwin, Paul R. Stevens' re-implementation of the Atari ST
+engines behind:
+
+    * Dungeon Master              (FTL, 1987)
+    * Chaos Strikes Back          (FTL, 1989) - including its hint oracle
+    * Dungeon Master II prison / any CSBwin-format custom dungeon
+
+It plays the ORIGINAL DATA FILES.  Nothing is bundled here: you supply
+dungeon.dat / graphics.dat (Dungeon Master) or hcsb.dat / hcsb.hct / mini.dat
+(Chaos Strikes Back) from your own copy of the game.
+
+    * SDL 1.2 window (DECwindows / X11), 320x200 scaled 1x to 6x
+    * Sound through SDL 1.2 audio - no SDL_mixer needed, see below
+    * Windowed by default; Alt+Enter toggles fullscreen
+    * Saved games and recorded sessions are byte-compatible with the Windows
+      and Linux builds
+    * Two additions of our own: QWEASD movement keys, and an automap that M
+      toggles (upstream has neither) - see RUNNING
+
+Credits: engine and Windows version by Paul R. Stevens; the SDL/POSIX platform
+layer this port builds on is by Erik and Rebecka Svanberg.  See CSBwin's own
+README and CSB_Description.html for the full story and the licence.
+
+
+PREREQUISITES
+-------------
+1. OpenVMS 8.4 on ALPHA (or I64).  **VAX is not supported** - the engine needs
+   a 64-bit integer type (i64 in CSBTypes.h) and VAX C/C++ has none.
+   CONFIGURE.COM checks and refuses.
+
+2. HP C++ for OpenVMS (CXX).  C++03 is enough; nothing here needs C++11.
+
+3. MMS or MMK.
+
+4. DECwindows / an X display.  The game needs a window, so DECW$DISPLAY (or
+   an X display over TCP/IP) must be usable by the process that runs it.
+
+5. SDL 1.2, and two logicals pointing at it:
+
+       $ DEFINE SDL     <directory containing SDL.h>
+       $ DEFINE LIBSDL  <directory containing LIBSDL$SHR.OPT / LIBSDL.OPT>
+
+   The same SDL 1.2 installation the other ports in this tree use.  SDL 2 is
+   NOT supported by this port (the SDL20 arm of the sources is not built).
+
+6. **SDL_mixer is NOT required, and MUST NOT be linked in.**  SoundMixer.cpp
+   in this directory IS a private implementation of the Mix_* subset CSBwin
+   uses, written directly on SDL 1.2 audio.  A real SDL_mixer would collide on
+   every Mix_* symbol, and the two Mix_Chunk layouts differ, so anything that
+   did link would misbehave.  Nothing else is needed either: no zlib, no
+   libpng, no OpenGL, no GLib, no GTK.
+
+
+GETTING THE SOURCES ONTO THE VMS SYSTEM
+---------------------------------------
+**TRANSFER IN TEXT MODE.**  Every source and header in this tree has CRLF line
+endings, so in text mode each line becomes one VMS record and you get ordinary
+variable-length record files that EDIT, TYPE, SEARCH and DIFFERENCES all
+handle:
+
+    $ UNZIP -a csbwin.zip                 ! -a = text mode
+      or  FTP> ASCII   then GET/PUT
+
+In binary/image mode the CR characters end up INSIDE the records, and that
+matters in two quite different ways:
+
+  * For the C++ sources it is only noise.  CXX emits %CXX-W-FOUNDCR on nearly
+    every line of a 3.5MB tree; it still compiles, because that is a warning,
+    but the real diagnostics are buried.  CONFIGURE.COM notices, probes whether
+    CXX accepts the FOUNDCR message name, and adds it to the disabled-warnings
+    list in the BUILD.COM it writes.
+  * **For the .COM files it is fatal.**  DCL - unlike MMS and MMK - does not
+    strip a trailing carriage return from a command record, so the CR becomes
+    part of the last token: `SET NOON` turns into the unrecognised keyword
+    `NOON<CR>`, `OK = 1` into an invalid numeric value, and `DEFINE SYS$ERROR
+    _NLA0:` into an RMS syntax error that quietly abandons the procedure.  This
+    really happened on the first 8.4 Alpha run and it names none of its causes.
+
+    CONFIGURE.COM and BUILD.COM are therefore hardened against it - every
+    command line ends in a `!` comment so a stray CR lands inside the comment,
+    there are no `-` continuation lines, and both files are shipped with
+    **LF-only** line endings so that even a binary-mode copy arrives clean.
+    CONFIGURE.COM also reports which kind of copy you have, as its first check:
+
+        Checking line endings         ...  VMS records (text mode transfer)
+        Checking line endings         ...  CR-terminated (binary transfer)
+
+    If you see the second one, the build will still work - but re-copying in
+    text mode is worth the two minutes.  Section 14 of COMPILER_FIXES.TXT has
+    the full diagnosis, and the rule to keep if you edit either .COM file.
+
+The GAME DATA FILES are a different matter: they are binary and must be
+transferred in **BINARY/IMAGE** mode.
+
+All 41 sources sit in this one directory; there are no subdirectories to
+create and no file needs renaming for ODS-2.
+
+
+BUILDING
+--------
+    $ SET DEFAULT device:[dir.CSBWIN]
+    $ DEFINE SDL     ...                  ! see PREREQUISITES
+    $ DEFINE LIBSDL  ...
+    $ @CONFIGURE.COM
+    $ @BUILD.COM
+
+Output: **CSBWIN.EXE** in this directory.
+
+CONFIGURE.COM does not generate the makefile - DESCRIP.MMS is checked in and
+complete.  What it does is verify the environment before you spend twenty
+minutes on a build that cannot work: architecture, compiler, MMS/MMK, the two
+logicals, and then it actually COMPILES, LINKS AND RUNS a small SDL probe that
+reports the SDL version and sizeof(SDL_Surface).  It writes a two-line
+BUILD.COM carrying whatever it discovered.
+
+BUILD.COM as checked in is a working fallback: it builds with DESCRIP.MMS's
+compiled-in defaults if you would rather skip the probe.
+
+To build without either script:
+
+    $ MMK/IGNORE=WARNING            ! or MMS/IGNORE=WARNING
+
+**/IGNORE=WARNING is not optional.**  MMS and MMK treat a warning-severity
+status from a compile as a failed action and abandon the build, and CXX does
+warn on this tree.  Every documented way of building it passes the qualifier.
+
+Other useful targets and overrides:
+
+    $ MMK/IGN=WAR CLEAN               ! objects, library, map, CSBWIN.EXE
+    $ MMK/IGN=WAR/MACRO=("SDLLIB=LIBSDL:LIBSDL/OPT")   ! static SDL
+    $ MMK/IGN=WAR/MACRO=("DEFS_EXTRA=VMS_NO_INTPTR_T") ! only for a CRTL whose
+                                                       ! <inttypes.h> lacks
+                                                       ! intptr_t; CONFIGURE.COM
+                                                       ! probes and adds this
+                                                       ! for you if needed.  On
+                                                       ! 8.4 it is not needed.
+
+**Do NOT add /POINTER_SIZE=64, /NOMEMBER_ALIGNMENT, /NOEXCEPTIONS or
+/STANDARD.**  All four break this port, each for its own reason; DESCRIP.MMS
+and COMPILER_FIXES.TXT sections 4.3, 11 and 12.6 explain which and why.
+
+If a file dies with
+
+    %GEM-F-ASSERTION, Compiler internal error - please submit problem report
+
+that is the known OpenVMS Alpha loop-unroller bug on "while (var-- != 0)", of
+which this 68000-transliterated engine contains 34 instances in 14 files.  All
+14 already compile through one macro, so the fix is one line in DESCRIP.MMS:
+
+    CXXFLAGS_PDEC = $(CXXFLAGS)           ->   CXXFLAGS_PDEC = $(CXXFLAGS_OPT1)
+
+then rebuild.  The unroller only runs above /OPTIMIZE=LEVEL=1, so LEVEL=1
+removes the trigger.  No engine source change is needed.  COMPILER_FIXES.TXT
+section 12.7 has the full inventory and a table mapping other GEM pass names to
+the flag that disables them.
+
+
+THE GAME DATA FILES
+-------------------
+Put them in the directory you run from, or point at them with --directory.
+
+    Dungeon Master        dungeon.dat        the dungeon
+                          graphics.dat       the graphics
+    Chaos Strikes Back    hcsb.dat           dungeon + hint oracle data
+                          hcsb.hct           the hint oracle index
+                          mini.dat           the "new adventure" starting party
+                          CSBgraphics.dat    CSB graphics (if you have it)
+    optional              DUNGEON.FTL        the prison sequence
+                          config.linux       food/effect tuning (text)
+                          Translation.txt    text substitutions (text)
+
+The upstream help text tells you the names "must be spelled with lower case".
+**That does not apply here** - ODS-2 is case-insensitive and upshifts, so
+DUNGEON.DAT and dungeon.dat are the same file.  (If your disk is ODS-5 with
+case-sensitivity enabled, then it does apply again.)
+
+The game WRITES in the current directory (or in --gamsav / --directory):
+
+    CSBGAME.DAT, CSBGAME2.DAT ...  saved games
+    CSBGAME*.BAK                   the previous save, kept automatically
+    CSBGAME*.MAP                   the automap's explored cells (see RUNNING)
+    [.LOGS]Record*.log             session recordings, if enabled
+    [.TRACES]TRACE*.txt            debug traces, if enabled
+    annotation.txt                 your own notes
+
+So the process needs WRITE access to that directory.  [.LOGS] and [.TRACES]
+are used if they exist and quietly fall back to the current directory if not -
+CREATE/DIRECTORY them if you want the recordings and traces kept separately.
+
+Saved games are byte-identical to the Windows and Linux ones (OpenVMS Alpha is
+little-endian, like the Atari ST data these files descend from), so you can
+copy a save from another machine and carry on - **transfer it in
+BINARY/IMAGE mode.**
+
+That is why the automap keeps its explored cells in CSBGAME*.MAP beside the
+save and not inside it.  A .MAP is this port's own file and no other build
+reads it; a save carried in from another machine simply arrives without one and
+the map starts blank.  Deleting a .MAP costs nothing but the walking.
+
+
+RUNNING
+-------
+CSBwin's options are "--small", "--directory" and so on, which DCL would try to
+interpret as its own qualifiers, so it has to be run as a FOREIGN COMMAND:
+
+    $ CSBWIN == "$DISK$USER:[GAMES.CSBWIN]CSBWIN.EXE"       ! note the $
+    $ SET DEFAULT DISK$USER:[GAMES.CSBWIN.DATA]
+    $ CSBWIN
+
+**QUOTE ANY ARGUMENT THAT IS A FILE SPECIFICATION.**  DCL upshifts unquoted
+foreign-command arguments, and while this port folds SWITCH NAMES to lower case
+for you (so --SMALL still works), it deliberately does NOT touch path
+arguments - an ODS-5 disk can have case-sensitive names, and a path you typed
+is a path you meant:
+
+    $ CSBWIN --small "--directory" "DKA100:[CSB.DATA]"
+
+Options, all of which behave exactly as on Windows and Linux:
+
+    --small           320x200      (1x - the original Atari ST size)
+    --large           640x400      (2x)
+    --verylarge       960x600      (3x)
+    --extralarge      1280x800     (4x)
+    --extremelylarge  1600x1000    (5x)
+    --humongous       1920x1200    (6x)
+    --width n --height n           an explicit window size
+    --fullscreen                   start fullscreen (Alt+Enter toggles)
+    --directory dir                where the data files are
+    --module dir                   alternate module directory
+    --root-path dir                search root
+    --gamsav dir                   where saved games go
+    --dungeon file                 use a named dungeon instead of dungeon.dat
+    --dmrules                      Dungeon Master rules in a CSB dungeon
+    --repeat                       restart automatically at game over
+    --quick n                      quick-start options
+    --vblmultiplier n              speed up the animation clock
+    --timer n                      timer interval, milliseconds
+    --record / --norecord          record this session to [.LOGS]
+    --play file                    play a recorded session back
+    --version                      print the version and exit
+    --help                         the full upstream option list
+
+**Windowed is the default on OpenVMS**, unlike the Linux build, which always
+starts fullscreen.  A fullscreen mode switch on an X server that will not
+change modes leaves you with a black screen and no obvious way out; use
+--fullscreen if you want it, and Alt+Enter to toggle either way.
+COMPILER_FIXES.TXT section 7.2 has the reasoning.
+
+**The party can be moved from the keyboard.**  Upstream ships no default key
+bindings at all - the key table is filled only from config.linux, so on a fresh
+install every key is dead and the only way to move is to click the arrows.
+These six letters are now always bound:
+
+    Q W E        Q turn left        W move forward      E turn right
+    A S D        A sidestep left    S move backward     D sidestep right
+
+One keypress is one step, because one click on an arrow is one step; holding a
+key does not repeat, because holding the mouse button does not either.  The
+keys go through the engine's own keyboard-to-button translator, so they are
+ignored while a menu is up and while a champion's name is being typed, and they
+are throttled, flash the arrow and get written to a recorded session exactly as
+a click does.  A KEY line in config.linux still wins, so an existing config
+that binds Q..D to something else keeps its binding.
+
+**There is an automap.**  Upstream has none - Dungeon Master and Chaos Strikes
+Back were meant to be mapped on graph paper - so this is an addition, not a
+port of anything:
+
+    M            draw the map in the 3D viewport; press M again to put the
+                 3D view back
+
+It shows only what the party has actually walked through, and the cells
+immediately around those, so a room fills in as you cross it; nothing behind a
+wall is ever revealed, and a secret door stays a blank until you have stood next
+to it.  Cells are coloured by what they are - floor, door, stairs, teleporter,
+pit - and the party is a block with a notch cut out of the side it faces.  The
+level number and your position are printed in the right-hand margin, in the same
+form AsciiDump.cpp prints locations in, so the two can be compared.
+
+The map is a mode, like the inventory: the clock keeps running, monsters keep
+coming, and clicks in the viewport are ignored while it is up, so you cannot
+grope at objects in a 3D view you cannot see.  Press M again before you fight.
+Opening a champion's inventory hides the map for as long as the inventory is
+open and it comes back when you close it.  M goes through the same translator
+the movement keys do, so it is dead while a menu is up and it is recorded - a
+recorded session plays back with the map going up and down in the same clock
+ticks.
+
+**ESC was the way back in the first version of this and did not work** - the
+map appeared and Escape did nothing.  Nothing in the path from SDL to the
+engine's key translator treats 0x1b differently from a letter, and M along that
+very same path worked, which points at the window manager or the X server
+taking Escape for itself before SDL ever sees it.  Rather than guess, M was
+made a toggle: one key, no second key to be intercepted, and the way out is the
+key you already know works because it is the way in.  Turning the map OFF is
+never refused, whatever state the game is in.
+
+The explored cells are saved and restored with the game, in a CSBGAME*.MAP file
+beside the save (see THE GAME DATA FILES).  A saved game itself gains not one
+byte, because the engine's structures are fixed-offset overlays on Atari ST disk
+images and the save format is shared with the other builds.  The .MAP carries a
+copy of the game's random identifier, so starting a new game in a slot that had
+one before gives you a blank map rather than the previous party's; anything that
+does not match exactly is discarded without a word.
+
+If SDL cannot open an audio device the game reports it and plays on silently -
+that is intended, not a fault to chase.
+
+
+WHAT IS DELIBERATELY NOT SUPPORTED
+----------------------------------
+    * **The GTK menu bar** (USE_OLD_GTK).  There is no GTK 2 on OpenVMS 8.4.
+      Nothing is lost: every menu function is also a command-line switch or an
+      in-game key.  stdafx.h has an #error for anyone who tries.
+    * **SDL 2** (SDL20).  This port is SDL 1.2 only.
+    * **OpenVMS VAX** - no 64-bit integer type.
+    * **64-bit pointers.**  The engine's structures are overlays on Atari ST
+      disk images with hard-coded field offsets that assume a 4-byte pointer.
+      32-bit pointers are the OpenVMS Alpha default, so the correct action is
+      simply not to pass /POINTER_SIZE.
+    * **_DEBUG builds.**  They compile, but the debug-only .BMP dump in
+      Viewport.cpp writes binary through a path that has not been given the
+      OpenVMS stream-format treatment, and its output path is a Windows one.
+    * **The Raspberry Pi, Pocket PC, classic Mac and Win32 platform files** in
+      this directory.  They are left in place for reference and are not
+      compiled - see COMPILER_FIXES.TXT section 2 for the list and the reason
+      for each.
+
+
+FILES ADDED OR CHANGED BY THE PORT
+----------------------------------
+    New:        csbglib.h            GLib substitute (typedefs, byte order,
+                                     int<->pointer casts, g_* logging).  Not
+                                     VMS-only any more: the macOS build needs
+                                     the identical substitute, so this is the
+                                     one copy both platforms use
+                vmsglib.h            the __VMS spelling - one line, includes
+                                     csbglib.h.  Kept because DESCRIP.MMS,
+                                     CONFIGURE.COM and this document all name
+                                     it
+                VMSFileName.inl      VMS file-syntax FILENAME class
+                DESCRIP.MMS          the MMS/MMK build description
+                CONFIGURE.COM        environment probe -> writes BUILD.COM
+                BUILD.COM            one-line build wrapper
+                COMPILER_FIXES.TXT   the full technical write-up
+                README.VMS           this file
+
+    Modified:   stdafx.h  CSBTypes.h  CSB.h  Data.h  Chaos.cpp  Hint.cpp
+                utility.cpp  WinScreen.cpp  system.cpp  CSBlinux.cpp
+                CSBUI.cpp  CSBCode.cpp  LinCSBUI.cpp  Viewport.cpp
+                Mouse.cpp  SaveGame.cpp
+
+Sixteen upstream files.  Eight of them carry the same one-line
+structure-packing change, and the last three are touched only by the automap.
+Every VMS-specific edit is marked in the source, is inside "#ifdef __VMS", and
+is explained in COMPILER_FIXES.TXT - except three that fix genuine upstream bugs
+affecting Linux too, which are deliberately NOT gated (sections 7.1, 8).
+
+Two of the changes are features rather than portability or bug fixes, and
+neither is gated on __VMS: they are correct on Linux and Win32 as well, and
+gating them would mean maintaining two behaviours.
+
+The keyboard movement keys described under RUNNING are in two pieces:
+AddBuiltinMovementKeys in CSBUI.cpp, which binds the letters, and a block at the
+end of TAG0196da in CSBCode.cpp, which turns them into movement button numbers.
+They are of no use to the Win32 build, which has a config.txt, but they do no
+harm there.
+
+The automap is at the END OF Viewport.cpp, roughly 300 lines under a banner
+comment, plus one call site in each of four other files:
+
+    Viewport.cpp   all of the automap: the explored-cell array, the drawing,
+                   and the CSBGAME*.MAP sidecar
+    CSBUI.cpp      M added to AddBuiltinMovementKeys
+    CSBCode.cpp    a case at the end of TAG0196da turns it into the
+                   pseudo-button number 0x2000; and the main loop marks the
+                   party's cell each tick and draws the map instead of the 3D
+                   view while it is up
+    Mouse.cpp      _HandleMouseEvents dispatches 0x2000 as a toggle, and
+                   ignores viewport clicks while the map is up
+    SaveGame.cpp   AutomapSave after the save is closed, AutomapLoad at the
+                   point a game has been successfully brought into memory
+
+It is deliberately NOT a new source file: DESCRIP.MMS, makefile, Makefile.am,
+CMakeLists.txt and the MSVC project would all have needed the same new entry,
+and any one of them missed would have broken that platform's link.  It is
+deliberately not in CSB.h either - $(OBJ) : $(HDRS) in DESCRIP.MMS means one
+line in a header rebuilds all 41 objects - so the five entry points are declared
+as local externs in the four files that call them, which is the idiom the rest
+of this tree already uses.  Nothing was added to 'd': that structure is a
+fixed-offset overlay on an Atari ST disk image and cannot take a new field.
+
+data.cpp and Recording.cpp were intentionally left alone even though the
+"traces/" and "logs/" strings live there: translating those into [.TRACES] and
+[.LOGS] is VMSFileName.inl's job, and editing the call sites would put path
+knowledge back into the engine, which is the thing CSBwin's design avoids.
+
+
+
